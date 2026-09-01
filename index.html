@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>인생네컷 포토부스</title>
+<style>
+  :root{
+    --bg: #2B1D2E;
+    --surface: #FFF9F2;
+    --ink: #241726;
+    --muted: #B9A8BB;
+    --flash: #FFC93C;
+    --coral: #FF6F59;
+  }
+  *{ box-sizing: border-box; }
+  html, body{
+    margin:0; padding:0; height:100%;
+    background: var(--bg);
+    color: var(--surface);
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    overflow: hidden;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  #app{
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+  }
+  /* 필름 스프로킷 장식 (좌우 여백) */
+  .sprockets{
+    position: fixed; top:0; bottom:0; width: 28px;
+    background-image: radial-gradient(circle, var(--bg) 6px, transparent 7px);
+    background-size: 28px 40px;
+    background-color: #171016;
+    z-index: 50;
+  }
+  .sprockets.left{ left:0; }
+  .sprockets.right{ right:0; }
+
+  .screen{
+    flex: 1;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 60px;
+    text-align: center;
+  }
+  .screen.active{ display: flex; }
+
+  h1{
+    font-size: clamp(32px, 5vw, 56px);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin: 0 0 12px;
+  }
+  p.sub{
+    font-size: clamp(16px, 2vw, 20px);
+    color: var(--muted);
+    margin: 0 0 36px;
+    max-width: 480px;
+    line-height: 1.5;
+  }
+
+  .btn{
+    appearance: none; border: none; cursor: pointer;
+    font-size: 22px; font-weight: 700;
+    padding: 18px 44px;
+    border-radius: 999px;
+    background: var(--flash);
+    color: var(--ink);
+    box-shadow: 0 6px 0 rgba(0,0,0,0.25);
+    transition: transform .08s ease;
+  }
+  .btn:active{ transform: translateY(4px); box-shadow: 0 2px 0 rgba(0,0,0,0.25); }
+  .btn.ghost{
+    background: transparent;
+    color: var(--surface);
+    border: 2px solid rgba(255,255,255,0.35);
+    box-shadow: none;
+  }
+  .btn.coral{ background: var(--coral); color: #fff; }
+  .btn-row{ display:flex; gap: 20px; margin-top: 8px; }
+
+  /* 촬영 화면 */
+  #captureScreen{ padding: 0; }
+  .camera-wrap{
+    position: relative; width: 100%; height: 100%;
+    display:flex; align-items:center; justify-content:center;
+    background:#000;
+  }
+  video{
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1); /* 셀카 좌우반전 */
+  }
+  .guide-frame{
+    position: absolute; inset: 48px;
+    border: 4px solid rgba(255,255,255,0.75);
+    border-radius: 28px;
+    pointer-events: none;
+  }
+  .hud{
+    position: absolute; top: 24px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.55);
+    padding: 10px 24px; border-radius: 999px;
+    font-size: 20px; font-weight: 700;
+  }
+  .countdown{
+    position: absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size: 200px; font-weight: 800;
+    color: #fff; text-shadow: 0 0 40px rgba(0,0,0,0.6);
+    pointer-events: none;
+  }
+  .shoot-btn-wrap{
+    position: absolute; bottom: 40px; left:50%; transform: translateX(-50%);
+  }
+
+  /* 리뷰 화면 */
+  .thumb-grid{
+    display:grid; grid-template-columns: repeat(2, 1fr); gap: 16px;
+    max-width: 640px; width:100%; margin-bottom: 32px;
+  }
+  .thumb-grid img{
+    width:100%; aspect-ratio: 3/4; object-fit: cover;
+    border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  }
+
+  /* 프레임 선택 */
+  .frame-grid{
+    display:grid; grid-template-columns: repeat(4, 1fr); gap: 20px;
+    max-width: 900px; width: 100%; margin-bottom: 12px;
+  }
+  .frame-card{
+    background: var(--surface); border-radius: 18px; padding: 10px;
+    cursor: pointer; border: 4px solid transparent;
+    transition: border-color .15s ease, transform .1s ease;
+  }
+  .frame-card:active{ transform: scale(0.97); }
+  .frame-card canvas{ width:100%; aspect-ratio: 3/4; border-radius: 10px; display:block; }
+  .frame-card .label{ color: var(--ink); font-weight: 700; margin-top: 8px; font-size: 15px; }
+
+  /* 결과 화면 */
+  #resultImg{
+    max-height: 62vh; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+    margin-bottom: 24px;
+  }
+  .save-hint{
+    font-size: 14px; color: var(--muted); margin-top: -12px; margin-bottom: 20px;
+  }
+</style>
+</head>
+<body>
+
+<div class="sprockets left"></div>
+<div class="sprockets right"></div>
+
+<div id="app">
+
+  <!-- 시작 화면 -->
+  <div class="screen active" id="startScreen">
+    <h1>인생네컷 포토부스</h1>
+    <p class="sub">화면을 누르면 카메라가 켜져요.<br>4번 촬영한 뒤 원하는 프레임을 골라 완성해보세요.</p>
+    <button class="btn" id="startBtn">촬영 시작</button>
+  </div>
+
+  <!-- 촬영 화면 -->
+  <div class="screen" id="captureScreen">
+    <div class="camera-wrap">
+      <video id="video" autoplay playsinline muted></video>
+      <div class="guide-frame"></div>
+      <div class="hud" id="hud">0 / 4 컷</div>
+      <div class="countdown" id="countdown" style="display:none;"></div>
+      <div class="shoot-btn-wrap">
+        <button class="btn coral" id="shootBtn">촬영하기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 리뷰 화면 -->
+  <div class="screen" id="reviewScreen">
+    <h1>확인해주세요</h1>
+    <div class="thumb-grid" id="thumbGrid"></div>
+    <div class="btn-row">
+      <button class="btn ghost" id="retakeBtn">다시 찍기</button>
+      <button class="btn" id="toFrameBtn">프레임 선택하기</button>
+    </div>
+  </div>
+
+  <!-- 프레임 선택 화면 -->
+  <div class="screen" id="frameScreen">
+    <h1>프레임을 골라주세요</h1>
+    <div class="frame-grid" id="frameGrid"></div>
+  </div>
+
+  <!-- 결과 화면 -->
+  <div class="screen" id="resultScreen">
+    <h1>완성!</h1>
+    <img id="resultImg" alt="완성된 포토부스 사진">
+    <div class="save-hint">사진을 길게 눌러 "사진에 추가"를 선택하면 저장돼요</div>
+    <div class="btn-row">
+      <button class="btn ghost" id="restartBtn">처음부터 다시</button>
+      <a class="btn" id="downloadBtn" download="photobooth.png">다운로드</a>
+    </div>
+  </div>
+
+</div>
+
+<canvas id="workCanvas" style="display:none;"></canvas>
+
+<script>
+(function(){
+  "use strict";
+
+  // ------------------------------------------------------------
+  // 0. 화면 전환 유틸
+  // ------------------------------------------------------------
+  const screens = {};
+  document.querySelectorAll(".screen").forEach(el => screens[el.id] = el);
+  function showScreen(id){
+    Object.values(screens).forEach(el => el.classList.remove("active"));
+    screens[id].classList.add("active");
+  }
+
+  // ------------------------------------------------------------
+  // 1. 프레임 템플릿 정의
+  //    각 템플릿은 4장의 사진이 들어갈 슬롯(비율 좌표)과
+  //    사진 위에 그려질 장식(decorate 함수)을 가지고 있습니다.
+  //    실제 이미지 에셋 없이 canvas 드로잉만으로 프레임을 표현합니다.
+  //    -> 나중에 진짜 디자인으로 바꾸고 싶으면 decorate 함수 안의
+  //       그리기 로직만 교체하면 됩니다.
+  // ------------------------------------------------------------
+  const CANVAS_W = 1200;
+  const CANVAS_H = 1800;
+
+  const verticalSlots = [
+    {x:0.08, y:0.05, w:0.84, h:0.205},
+    {x:0.08, y:0.275, w:0.84, h:0.205},
+    {x:0.08, y:0.50, w:0.84, h:0.205},
+    {x:0.08, y:0.725, w:0.84, h:0.205}
+  ];
+  const gridSlots = [
+    {x:0.06, y:0.06, w:0.42, h:0.42},
+    {x:0.52, y:0.06, w:0.42, h:0.42},
+    {x:0.06, y:0.52, w:0.42, h:0.42},
+    {x:0.52, y:0.52, w:0.42, h:0.42}
+  ];
+
+  function roundRectPath(ctx, x, y, w, h, r){
+    ctx.beginPath();
+    ctx.moveTo(x+r, y);
+    ctx.arcTo(x+w, y, x+w, y+h, r);
+    ctx.arcTo(x+w, y+h, x, y+h, r);
+    ctx.arcTo(x, y+h, x, y, r);
+    ctx.arcTo(x, y, x+w, y, r);
+    ctx.closePath();
+  }
+
+  const templates = [
+    {
+      id: "pink",
+      name: "핑크 필름",
+      slots: verticalSlots,
+      decorate(ctx, w, h){
+        ctx.fillStyle = "#FFEAF1";
+        ctx.fillRect(0,0,w,h);
+        ctx.fillStyle = "#FF6F9C";
+        ctx.fillRect(0,0,w, h*0.03);
+        ctx.fillRect(0,h*0.97,w,h*0.03);
+        ctx.font = "bold 44px -apple-system, sans-serif";
+        ctx.fillStyle = "#D6437A";
+        ctx.textAlign = "center";
+        ctx.fillText("LIFE FOUR CUT", w/2, h*0.965 + 14);
+      }
+    },
+    {
+      id: "mint",
+      name: "민트",
+      slots: verticalSlots,
+      decorate(ctx, w, h){
+        ctx.fillStyle = "#EAFBF6";
+        ctx.fillRect(0,0,w,h);
+        ctx.strokeStyle = "#3FBF9F";
+        ctx.lineWidth = 14;
+        roundRectPath(ctx, 20, 20, w-40, h-40, 30);
+        ctx.stroke();
+        ctx.font = "bold 40px -apple-system, sans-serif";
+        ctx.fillStyle = "#1E7A63";
+        ctx.textAlign = "center";
+        ctx.fillText("PHOTO BOOTH", w/2, h*0.965 + 10);
+      }
+    },
+    {
+      id: "black",
+      name: "블랙 골드",
+      slots: verticalSlots,
+      decorate(ctx, w, h){
+        ctx.fillStyle = "#141414";
+        ctx.fillRect(0,0,w,h);
+        ctx.strokeStyle = "#D4AF6A";
+        ctx.lineWidth = 6;
+        roundRectPath(ctx, 30, 30, w-60, h-60, 4);
+        ctx.stroke();
+        ctx.font = "bold 42px Georgia, serif";
+        ctx.fillStyle = "#D4AF6A";
+        ctx.textAlign = "center";
+        ctx.fillText("★ MEMORIES ★", w/2, h*0.965 + 12);
+      }
+    },
+    {
+      id: "grid",
+      name: "2x2 그리드",
+      slots: gridSlots,
+      decorate(ctx, w, h){
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(0,0,w,h);
+        ctx.strokeStyle = "#FFC93C";
+        ctx.lineWidth = 10;
+        ctx.beginPath();
+        ctx.moveTo(w/2, 20); ctx.lineTo(w/2, h-20);
+        ctx.moveTo(20, h/2); ctx.lineTo(w-20, h/2);
+        ctx.stroke();
+        ctx.font = "bold 40px -apple-system, sans-serif";
+        ctx.fillStyle = "#241726";
+        ctx.textAlign = "center";
+        ctx.fillText("GOOD TIMES", w/2, h*0.975 + 10);
+      }
+    }
+  ];
+
+  // ------------------------------------------------------------
+  // 2. 상태
+  // ------------------------------------------------------------
+  const state = {
+    stream: null,
+    capturedPhotos: [],   // HTMLImageElement 배열 (4장)
+    selectedTemplate: null
+  };
+
+  const video = document.getElementById("video");
+  const workCanvas = document.getElementById("workCanvas");
+  const workCtx = workCanvas.getContext("2d");
+
+  // ------------------------------------------------------------
+  // 3. 카메라 시작/정지
+  // ------------------------------------------------------------
+  async function startCamera(){
+    try{
+      state.stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: {ideal: 1280}, height: {ideal: 1280} },
+        audio: false
+      });
+      video.srcObject = state.stream;
+    }catch(err){
+      alert("카메라를 켤 수 없어요. 브라우저의 카메라 권한을 확인해주세요.\n" + err.message);
+    }
+  }
+  function stopCamera(){
+    if(state.stream){
+      state.stream.getTracks().forEach(t => t.stop());
+      state.stream = null;
+    }
+  }
+
+  // 비디오 프레임 한 장을 3:4 비율로 크롭해서 이미지로 캡처
+  function captureFrameAsImage(){
+    const targetRatio = 3/4; // width/height
+    const vw = video.videoWidth, vh = video.videoHeight;
+    let sx, sy, sw, sh;
+    const vRatio = vw / vh;
+    if(vRatio > targetRatio){
+      sh = vh; sw = vh * targetRatio; sx = (vw - sw)/2; sy = 0;
+    }else{
+      sw = vw; sh = vw / targetRatio; sx = 0; sy = (vh - sh)/2;
+    }
+    workCanvas.width = 900; workCanvas.height = 1200;
+    // 좌우반전(셀카) 상태로 촬영
+    workCtx.save();
+    workCtx.translate(workCanvas.width, 0);
+    workCtx.scale(-1, 1);
+    workCtx.drawImage(video, sx, sy, sw, sh, 0, 0, workCanvas.width, workCanvas.height);
+    workCtx.restore();
+
+    const img = new Image();
+    img.src = workCanvas.toDataURL("image/jpeg", 0.92);
+    return img;
+  }
+
+  // ------------------------------------------------------------
+  // 4. 촬영 흐름 (카운트다운 -> 촬영, 4회 반복)
+  // ------------------------------------------------------------
+  const hud = document.getElementById("hud");
+  const countdownEl = document.getElementById("countdown");
+  const shootBtn = document.getElementById("shootBtn");
+
+  function updateHud(){
+    hud.textContent = state.capturedPhotos.length + " / 4 컷";
+  }
+
+  function runCountdownThenShoot(){
+    shootBtn.disabled = true;
+    let n = 3;
+    countdownEl.style.display = "flex";
+    countdownEl.textContent = n;
+    const timer = setInterval(() => {
+      n -= 1;
+      if(n > 0){
+        countdownEl.textContent = n;
+      }else{
+        clearInterval(timer);
+        countdownEl.style.display = "none";
+        const img = captureFrameAsImage();
+        state.capturedPhotos.push(img);
+        updateHud();
+        shootBtn.disabled = false;
+        if(state.capturedPhotos.length >= 4){
+          goToReview();
+        }
+      }
+    }, 1000);
+  }
+
+  shootBtn.addEventListener("click", runCountdownThenShoot);
+
+  // ------------------------------------------------------------
+  // 5. 리뷰 화면
+  // ------------------------------------------------------------
+  function goToReview(){
+    stopCamera();
+    const grid = document.getElementById("thumbGrid");
+    grid.innerHTML = "";
+    state.capturedPhotos.forEach(img => {
+      const el = document.createElement("img");
+      el.src = img.src;
+      grid.appendChild(el);
+    });
+    showScreen("reviewScreen");
+  }
+
+  document.getElementById("retakeBtn").addEventListener("click", async () => {
+    state.capturedPhotos = [];
+    updateHud();
+    showScreen("captureScreen");
+    await startCamera();
+  });
+
+  document.getElementById("toFrameBtn").addEventListener("click", () => {
+    showScreen("frameScreen");
+  });
+
+  // ------------------------------------------------------------
+  // 6. 프레임 선택 화면 (썸네일도 실제 합성 로직으로 미리 렌더링)
+  // ------------------------------------------------------------
+  function drawComposite(ctx, w, h, template, photos){
+    ctx.clearRect(0,0,w,h);
+    // 슬롯에 사진 먼저 채우기 (aspectFill 크롭)
+    template.slots.forEach((slot, i) => {
+      const photo = photos[i];
+      if(!photo) return;
+      const rx = slot.x*w, ry = slot.y*h, rw = slot.w*w, rh = slot.h*h;
+      const imgRatio = photo.width / photo.height;
+      const slotRatio = rw / rh;
+      let sx, sy, sw, sh;
+      if(imgRatio > slotRatio){
+        sh = photo.height; sw = photo.height * slotRatio;
+        sx = (photo.width - sw)/2; sy = 0;
+      }else{
+        sw = photo.width; sh = photo.width / slotRatio;
+        sx = 0; sy = (photo.height - sh)/2;
+      }
+      ctx.drawImage(photo, sx, sy, sw, sh, rx, ry, rw, rh);
+    });
+    // 프레임 장식은 사진 "주변"에 그려지도록 슬롯 바깥 영역만 칠하는 대신,
+    // 데코레이터가 배경을 먼저 그리지 않고 테두리/텍스트만 그리도록 구성됨
+    template.decorate(ctx, w, h);
+  }
+
+  // 프레임 데코레이터를 사진보다 "아래"에 배경으로, 테두리는 "위"에 그리기 위해
+  // decorate를 두 단계(배경/전경)로 나누는 대신, 여기서는 간단히
+  // 배경을 먼저 채우고 사진을 그 위에, 마지막에 테두리를 다시 그립니다.
+  function drawCompositeFull(ctx, w, h, template, photos){
+    ctx.clearRect(0,0,w,h);
+    // 1) 배경 + 텍스트 등 전체 데코레이션 먼저
+    template.decorate(ctx, w, h);
+    // 2) 슬롯에 사진 채우기
+    template.slots.forEach((slot, i) => {
+      const photo = photos[i];
+      if(!photo) return;
+      const rx = slot.x*w, ry = slot.y*h, rw = slot.w*w, rh = slot.h*h;
+      const imgRatio = photo.width / photo.height;
+      const slotRatio = rw / rh;
+      let sx, sy, sw, sh;
+      if(imgRatio > slotRatio){
+        sh = photo.height; sw = photo.height * slotRatio;
+        sx = (photo.width - sw)/2; sy = 0;
+      }else{
+        sw = photo.width; sh = photo.width / slotRatio;
+        sx = 0; sy = (photo.height - sh)/2;
+      }
+      ctx.save();
+      roundRectPath(ctx, rx, ry, rw, rh, 10);
+      ctx.clip();
+      ctx.drawImage(photo, sx, sy, sw, sh, rx, ry, rw, rh);
+      ctx.restore();
+    });
+  }
+
+  function renderFrameGrid(){
+    const grid = document.getElementById("frameGrid");
+    grid.innerHTML = "";
+    templates.forEach(tpl => {
+      const card = document.createElement("div");
+      card.className = "frame-card";
+      const canvas = document.createElement("canvas");
+      canvas.width = 300; canvas.height = 400;
+      const label = document.createElement("div");
+      label.className = "label";
+      label.textContent = tpl.name;
+      card.appendChild(canvas);
+      card.appendChild(label);
+      grid.appendChild(card);
+
+      const ctx = canvas.getContext("2d");
+      drawCompositeFull(ctx, canvas.width, canvas.height, tpl, state.capturedPhotos);
+
+      card.addEventListener("click", () => selectTemplateAndFinish(tpl));
+    });
+  }
+
+  function selectTemplateAndFinish(tpl){
+    state.selectedTemplate = tpl;
+    workCanvas.width = CANVAS_W;
+    workCanvas.height = CANVAS_H;
+    drawCompositeFull(workCtx, CANVAS_W, CANVAS_H, tpl, state.capturedPhotos);
+    const dataUrl = workCanvas.toDataURL("image/png");
+    const resultImg = document.getElementById("resultImg");
+    resultImg.src = dataUrl;
+    document.getElementById("downloadBtn").href = dataUrl;
+    showScreen("resultScreen");
+  }
+
+  // ------------------------------------------------------------
+  // 7. 화면 전환 버튼들
+  // ------------------------------------------------------------
+  document.getElementById("startBtn").addEventListener("click", async () => {
+    showScreen("captureScreen");
+    await startCamera();
+  });
+
+  document.getElementById("restartBtn").addEventListener("click", () => {
+    state.capturedPhotos = [];
+    state.selectedTemplate = null;
+    updateHud();
+    showScreen("startScreen");
+  });
+
+  // 프레임 화면 진입 시 그리드 렌더링 (사진이 준비된 다음에)
+  const frameScreenObserver = new MutationObserver(() => {
+    if(screens.frameScreen.classList.contains("active")){
+      renderFrameGrid();
+    }
+  });
+  frameScreenObserver.observe(screens.frameScreen, { attributes: true, attributeFilter: ["class"] });
+
+})();
+</script>
+</body>
+</html>
