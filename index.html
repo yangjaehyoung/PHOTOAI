@@ -344,6 +344,61 @@
   const workCtx = workCanvas.getContext("2d");
 
   // ------------------------------------------------------------
+  // 2-1. 셔터(찰칵) 효과음 - 외부 파일 없이 Web Audio API로 합성
+  // ------------------------------------------------------------
+  let audioCtx = null;
+  function getAudioCtx(){
+    if(!audioCtx){
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new Ctx();
+    }
+    if(audioCtx.state === "suspended"){
+      audioCtx.resume();
+    }
+    return audioCtx;
+  }
+  function playShutterSound(){
+    try{
+      const ctx = getAudioCtx();
+      const now = ctx.currentTime;
+
+      // "딸깍" 하는 두 번의 짧은 클릭(노이즈 버스트)로 셔터음 구성
+      function clickBurst(startTime, duration, freq){
+        const bufferSize = Math.floor(ctx.sampleRate * duration);
+        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for(let i = 0; i < bufferSize; i++){
+          data[i] = (Math.random() * 2 - 1);
+        }
+        const noise = ctx.createBufferSource();
+        noise.buffer = buffer;
+
+        const bandpass = ctx.createBiquadFilter();
+        bandpass.type = "bandpass";
+        bandpass.frequency.value = freq;
+        bandpass.Q.value = 1.2;
+
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.9, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+
+        noise.connect(bandpass);
+        bandpass.connect(gain);
+        gain.connect(ctx.destination);
+
+        noise.start(startTime);
+        noise.stop(startTime + duration);
+      }
+
+      clickBurst(now, 0.045, 2200);       // 셔터 열림
+      clickBurst(now + 0.075, 0.05, 1500); // 셔터 닫힘
+    }catch(err){
+      // 오디오 재생 실패해도 촬영 흐름에는 영향 없게 조용히 무시
+      console.warn("셔터음 재생 실패:", err);
+    }
+  }
+
+  // ------------------------------------------------------------
   // 3. 카메라 시작/정지
   // ------------------------------------------------------------
   async function startCamera(){
@@ -399,9 +454,13 @@
     hud.textContent = state.capturedPhotos.length + " / 4 컷";
   }
 
+  const COUNTDOWN_START = 5;
+  const AUTO_NEXT_DELAY = 900; // 촬영 후 다음 카운트다운 시작까지 대기 시간(ms)
+
   function runCountdownThenShoot(){
     shootBtn.disabled = true;
-    let n = 3;
+    shootBtn.style.display = "none"; // 자동 연속 촬영이라 버튼은 첫 클릭 후 숨김
+    let n = COUNTDOWN_START;
     countdownEl.style.display = "flex";
     countdownEl.textContent = n;
     const timer = setInterval(() => {
@@ -411,12 +470,15 @@
       }else{
         clearInterval(timer);
         countdownEl.style.display = "none";
+        playShutterSound();
         const img = captureFrameAsImage();
         state.capturedPhotos.push(img);
         updateHud();
-        shootBtn.disabled = false;
         if(state.capturedPhotos.length >= 4){
           goToReview();
+        }else{
+          // 자동으로 다음 컷 카운트다운 시작
+          setTimeout(runCountdownThenShoot, AUTO_NEXT_DELAY);
         }
       }
     }, 1000);
@@ -442,6 +504,8 @@
   document.getElementById("retakeBtn").addEventListener("click", async () => {
     state.capturedPhotos = [];
     updateHud();
+    shootBtn.style.display = "";
+    shootBtn.disabled = false;
     showScreen("captureScreen");
     await startCamera();
   });
@@ -528,6 +592,8 @@
     state.capturedPhotos = [];
     state.selectedTemplate = null;
     updateHud();
+    shootBtn.style.display = "";
+    shootBtn.disabled = false;
     showScreen("startScreen");
   });
 
